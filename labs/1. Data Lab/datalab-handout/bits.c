@@ -250,7 +250,7 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
-  return 2;
+    return ((x >> 31) | ((~x + 1) >> 31)) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -265,7 +265,17 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  return 0;
+    int cnt = 0;
+    int goal = (x >> 31);
+
+    cnt = !(x ^ goal) + !((x >> 1) ^ goal) + !((x >> 2) ^ goal) + !((x >> 3) ^ goal) + !((x >> 4) ^ goal) + !((x >> 5) ^ goal) + !((x >> 6) ^ goal) 
++ !((x >> 7) ^ goal) + !((x >> 8) ^ goal) + !((x >> 9) ^ goal) + !((x >> 10) ^ goal) + !((x >> 11) ^ goal) 
++ !((x >> 12) ^ goal) + !((x >> 13) ^ goal) + !((x >> 14) ^ goal) + !((x >> 15) ^ goal) + !((x >> 16) ^ goal) 
++ !((x >> 17) ^ goal) + !((x >> 18) ^ goal) + !((x >> 19) ^ goal) + !((x >> 20) ^ goal) + !((x >> 21) ^ goal) 
++ !((x >> 22) ^ goal) + !((x >> 23) ^ goal) + !((x >> 24) ^ goal) + !((x >> 25) ^ goal) + !((x >> 26) ^ goal) 
++ !((x >> 27) ^ goal) + !((x >> 28) ^ goal) + !((x >> 29) ^ goal) + !((x >> 30) ^ goal) + !((x >> 31) ^ goal); 
+
+    return (33 + ~cnt + 1); 
 }
 //float
 /* 
