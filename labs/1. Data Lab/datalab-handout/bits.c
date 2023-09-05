@@ -204,11 +204,10 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-    int cond0 = !(x & ~0xFF);
-	int cond1 = !(((x >> 4) & 0x3) ^ 0x3);
-	int cond2_1 = !((x >> 3) & 0x1);
-	int cond2_2 = !(((x >> 1) & 0x4) ^ 0x4);
-	return cond0 & cond1 & (cond2_1 | cond2_2);
+	int cond1 = !((x & (~0xF)) ^ 0x30);
+	int cond2_1 = !(((x >> 3) & 0x1));
+	int cond2_2 = !(((x >> 1) & 0x7) ^ 0x4);
+	return cond1 & (cond2_1 | cond2_2);
 }
 /* 
  * conditional - same as x ? y : z 
@@ -218,7 +217,8 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+	x = ~(~(!x) + 1);
+	return (y & x) | (z & ~x);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -228,7 +228,17 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+    int isEqual = !(x ^ y); 
+	int res = x + ~y + 1;	
+
+	int xSignBit = (x >> 31) & 0x1;	
+	int ySignBit = (y >> 31) & 0x1;
+	int resSignBit = (res >> 31) & 0x1;
+
+	int po = !xSignBit & ySignBit & resSignBit;
+	int no = xSignBit & !ySignBit & !resSignBit;
+
+	return isEqual | (!po & !no & resSignBit) | no;	
 }
 //4
 /* 
