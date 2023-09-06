@@ -265,17 +265,25 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-    int cnt = 0;
-    int goal = (x >> 31);
+    int posFlag, threshold1, threshold2, threshold3, threshold4, threshold5, res, shift;
 
-    cnt = !(x ^ goal) + !((x >> 1) ^ goal) + !((x >> 2) ^ goal) + !((x >> 3) ^ goal) + !((x >> 4) ^ goal) + !((x >> 5) ^ goal) + !((x >> 6) ^ goal) 
-+ !((x >> 7) ^ goal) + !((x >> 8) ^ goal) + !((x >> 9) ^ goal) + !((x >> 10) ^ goal) + !((x >> 11) ^ goal) 
-+ !((x >> 12) ^ goal) + !((x >> 13) ^ goal) + !((x >> 14) ^ goal) + !((x >> 15) ^ goal) + !((x >> 16) ^ goal) 
-+ !((x >> 17) ^ goal) + !((x >> 18) ^ goal) + !((x >> 19) ^ goal) + !((x >> 20) ^ goal) + !((x >> 21) ^ goal) 
-+ !((x >> 22) ^ goal) + !((x >> 23) ^ goal) + !((x >> 24) ^ goal) + !((x >> 25) ^ goal) + !((x >> 26) ^ goal) 
-+ !((x >> 27) ^ goal) + !((x >> 28) ^ goal) + !((x >> 29) ^ goal) + !((x >> 30) ^ goal) + !((x >> 31) ^ goal); 
+    posFlag = (x >> 31);
+    x = (posFlag & ~x) | (~posFlag & x);
+    threshold1 = ((0xFF << 8) | 0xFF) << 16;
+    threshold2 = 0xFF << 8;
+    threshold3 = 0xF << 4;
+    threshold4 = 0x3 << 2;
+    threshold5 = 0x1 << 1;
 
-    return (33 + ~cnt + 1); 
+    res = (!!((x & threshold1) ^ 0)) << 4; x = x >> res;
+    shift = (!!((x & threshold2) ^ 0)) << 3; x = x >> shift; res = res | shift;
+
+    shift = (!!((x & threshold3) ^ 0)) << 2; x = x >> shift; res = res | shift;
+    shift = (!!((x & threshold4) ^ 0)) << 1; x = x >> shift; res = res | shift;
+    shift = (!!((x & threshold5) ^ 0)); x = x >> shift; res = res | shift;
+    res = res + (x & 0x1);
+
+    return res + 1;
 }
 //float
 /* 
@@ -290,7 +298,23 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  return 2;
+    unsigned frac, exp, sign, ifExpAddOne, isDenorm;
+    frac = uf & ((0x1 << 23) - 1);
+    exp = (uf & (0xff << 23)) >> 23;
+    sign = uf & (1 << 31);
+
+    if (exp == 0xFF) 
+        return uf;
+
+    isDenorm = (exp == 0);
+    if (!isDenorm)
+        exp = exp + 1;
+    else {
+        ifExpAddOne = frac >> 22; 
+        exp = exp + ifExpAddOne;
+        frac = (frac << 1) & ((0x1 << 23) - 1);
+    }
+    return sign | (exp << 23) | frac; 
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
