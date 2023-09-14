@@ -1,0 +1,24 @@
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+ff ff ff ff ff ff ff ff  /* junk */
+06 1a 40 00 00 00 00 00  /* movq %rsp, %rax in addval_190 */
+a2 19 40 00 00 00 00 00  /* movq %rax, %rdi in addval_273 */
+
+ab 19 40 00 00 00 00 00  /* popq %rax in addval_219 */
+48 00 00 00 00 00 00 00  /* 0x48: the value be put into %eax */
+dd 19 40 00 00 00 00 00  /* movl %eax, %edx in getval_481 */
+34 1a 40 00 00 00 00 00  /* movl %edx, %ecx in getval_159 */
+27 1a 40 00 00 00 00 00  /* movl %ecx, %esi in addval_187 */
+
+d6 19 40 00 00 00 00 00  /* add_xy, %esp + 0x48, get the address of string */
+a2 19 40 00 00 00 00 00  /* movq %rax, %rdi in addval_273 */
+
+fa 18 40 00 00 00 00 00  /* touch3 */
+35 39 62 39 39 37 66 61 00 /* string */
+
+
+
+
+
