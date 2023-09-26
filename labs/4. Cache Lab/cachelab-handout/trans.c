@@ -20,9 +20,67 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     be graded. 
  */
 char transpose_submit_desc[] = "Transpose submission";
-void transpose_submit(int M, int N, int A[N][M], int B[M][N])
-{
+void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
+    int bsize = 8 * 32 / M;
+
+    int rowEnd = bsize * (N / bsize); 
+    int colEnd = bsize * (M / bsize);
+
+    int i, j, k, l;
+    // block
+    for (i = 0; i < rowEnd; i += bsize) {
+        for (j = 0; j < colEnd; j += bsize) {
+
+            // zig-zag
+            k = i;
+            l = j + bsize - 1;
+            int diag = 1;
+
+            while (diag <= bsize) {
+                for (int c = 0; c < diag; ++c) {
+                    B[l][k] = A[k][l];
+                    ++k;
+                    ++l;
+                }
+                ++diag;
+                k = i;
+                l = j + bsize - diag;
+            }
+
+            diag -= 2;
+            k = i + 1;
+            l = j;
+            while (diag > 0) {
+                for (int c = 0; c < diag; ++c) {
+                    B[l][k] = A[k][l];
+                    ++k;
+                    ++l; 
+                }
+                --diag;
+                k = i + bsize - diag;
+                l = j; 
+            }
+        }
+    }
+
+    // if (M == N)
+      //  return ;
+
+
+    // A: 67 x 61
+    for (k = i; k < N; ++k) 
+        for (l = j; l < M; ++l)
+            B[l][k] = A[k][l];
+    
+    for (k = i; k < N; ++k)
+        for (l = 0; l < j; ++l)
+            B[l][k] = A[k][l];
+
+    for (k = j; k < M; ++k) 
+        for (l = 0; l < i; ++l)
+            B[k][l] = A[l][k];
 }
+
 
 /* 
  * You can define additional transpose functions below. We've defined
@@ -32,6 +90,39 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N])
 /* 
  * trans - A simple baseline transpose function, not optimized for the cache.
  */
+char *trans_block_desc = "Block reverse row-wise scan transpose";
+void transpose_block(int M, int N, int A[N][M], int B[M][N]) {
+    int bsize = 8 * 32 / M;
+
+    int rowEnd = bsize * (N / bsize); 
+    int colEnd = bsize * (M / bsize);
+
+    int i, j, k, l;
+    // block
+    for (i = 0; i < rowEnd; i += bsize) 
+        for (j = 0; j < colEnd; j += bsize) 
+            for (l = j + bsize - 1; l >= j; --l)
+            for (k = i; k < i + bsize; ++k) 
+                B[l][k] = A[k][l];
+
+    if (M == N)
+        return ;
+
+    // A: 67 x 61
+    for (k = i; k < N; ++k) 
+        for (l = j; l < M; ++l)
+            B[l][k] = A[k][l];
+    
+    for (k = i; k < N; ++k)
+        for (l = 0; l < j; ++l)
+            B[l][k] = A[k][l];
+
+    for (k = j; k < M; ++k) 
+        for (l = 0; l < i; ++l)
+            B[k][l] = A[l][k];
+}
+
+
 char trans_desc[] = "Simple row-wise scan transpose";
 void trans(int M, int N, int A[N][M], int B[M][N])
 {
@@ -46,6 +137,23 @@ void trans(int M, int N, int A[N][M], int B[M][N])
 
 }
 
+char trans_col_wise[] = "Simple col-wise scan transpose";
+void trans_col(int M, int N, int A[N][M], int B[M][N]) {
+    for (int j = 0; j < M; ++j) {
+        for (int i = 0; i < N; ++i) {
+            B[j][i] = A[i][j];
+        }
+    }
+}
+
+char trans_reverse_wise[] = "Reverse row-wise scan transpose";
+void trans_reverse(int M, int N, int A[N][M], int B[M][N]) {
+    for (int i = 0; i < N; ++i) {
+        for (int j = M - 1; j >= 0; --j)
+            B[j][i] = A[i][j];
+    }
+}
+
 /*
  * registerFunctions - This function registers your transpose
  *     functions with the driver.  At runtime, the driver will
@@ -57,9 +165,13 @@ void registerFunctions()
 {
     /* Register your solution function */
     registerTransFunction(transpose_submit, transpose_submit_desc); 
+    registerTransFunction(transpose_block, trans_block_desc);
 
     /* Register any additional transpose functions */
     registerTransFunction(trans, trans_desc); 
+
+    registerTransFunction(trans_col, trans_col_wise);
+    registerTransFunction(trans_reverse, trans_reverse_wise);
 
 }
 
