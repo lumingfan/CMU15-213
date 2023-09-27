@@ -20,48 +20,78 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     be graded. 
  */
 char transpose_submit_desc[] = "Transpose submission";
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
-    // for (int i = 0; i < 3; i += 8)
-    int bsize = 8 * 32 / M;
-
-    int rowEnd = bsize * (N / bsize); 
-    int colEnd = bsize * (M / bsize);
-
+void transposeBy32(int A[32][32], int B[32][32]) {
+    int bsize = 8;
+    int end = 32;
     int i, j, k, l;
     // block
-    for (i = 0; i < rowEnd; i += bsize) {
-        for (j = 0; j < colEnd; j += bsize) { 
-            for (int c = 1; c <= bsize; ++c) {
-                k = i + bsize - c;
-                l = j + bsize - c;
+    for (i = 0; i < end; i += bsize) {
+        for (j = 0; j < end; j += bsize) { 
+            for (int c = 0; c < bsize; ++c) {
+                k = i + c;
+                l = j + c;
                 B[l][k] = A[k][l];
 
-                for (k = i + bsize - 1; k >= i; --k) {
-                        if (k == l) {
-                            continue;
-                        } else {
-                            B[l][k] = A[k][l];
-                        }
+                for (k = i; k < i + bsize; ++k) {
+                    if (k == i + c) {
+                        continue;
+                    } 
+                    B[l][k] = A[k][l];
                 }
             }
         }
     }
+}
+
+void transposeBy64(int A[64][64], int B[64][64]) {
+    int bsize = 4;
+    int end = 64;
+    int i, j, k, l;
+    // block
+
+    for (i = 0; i < end; i += bsize) {
+        for (j = 0; j < end; j += bsize) { 
+            for (int c = 0; c < bsize; ++c) {
+                k = i + c;
+                l = j + c;
+                B[l][k] = A[k][l];
+                for (k = i; k < i + bsize; ++k) {
+                    if (k == i + c) {
+                        continue;
+                    } 
+                    B[l][k] = A[k][l];
+                }
+            } 
+        }
+    }
+}
+
+void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
+    if (M == 32 && N == 32) {
+        transposeBy32(A, B);
+        return ;
+    }
+    
+    if (M == 64 && N == 64) {
+        transposeBy64(A, B);
+    }
+    
 
     if (M == N)
         return ;
 
     // A: 67 x 61
-    for (k = i; k < N; ++k) 
-        for (l = j; l < M; ++l)
-            B[l][k] = A[k][l];
+    // for (k = i; k < N; ++k) 
+    //     for (l = j; l < M; ++l)
+    //         B[l][k] = A[k][l];
     
-    for (k = i; k < N; ++k)
-        for (l = 0; l < j; ++l)
-            B[l][k] = A[k][l];
+    // for (k = i; k < N; ++k)
+    //     for (l = 0; l < j; ++l)
+    //         B[l][k] = A[k][l];
 
-    for (k = j; k < M; ++k) 
-        for (l = 0; l < i; ++l)
-            B[k][l] = A[l][k];
+    // for (k = j; k < M; ++k) 
+    //     for (l = 0; l < i; ++l)
+    //         B[k][l] = A[l][k];
 
 }
 
@@ -213,6 +243,7 @@ void registerFunctions()
     /* Register your solution function */
     registerTransFunction(transpose_submit, transpose_submit_desc); 
     // registerTransFunction(transpose_block, trans_block_desc);
+    // registerTransFunction(transpose_zig_zag, trans_zig_zag_desc);
 
     /* Register any additional transpose functions */
     // registerTransFunction(trans, trans_desc); 
