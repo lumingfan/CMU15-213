@@ -4,7 +4,7 @@
  * Each transpose function must have a prototype of the form:
  * void trans(int M, int N, int A[N][M], int B[M][N]);
  *
- * A transpose function is evaluated by counting the number of misses
+ * A transpose function is evaluated by counting the Number of misses
  * on a 1KB direct mapped cache with a block size of 32 bytes.
  */ 
 #include <stdio.h>
@@ -14,84 +14,53 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
 
 /* 
  * transpose_submit - This is the solution transpose function that you
- *     will be graded on for Part B of the assignment. Do not change
+ *     will be graded on for Part B of the assignment. Do Not change
  *     the description string "Transpose submission", as the driver
  *     searches for that string to identify the transpose function to
  *     be graded. 
  */
 char transpose_submit_desc[] = "Transpose submission";
-void transposeBy32(int A[32][32], int B[32][32]) {
-    int bsize = 8;
-    int end = 32;
+
+void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
+    int bsize = 32 * 8 / M;
+    if (M == 61) 
+        bsize = 12;
+    int rowend = bsize * (N / bsize);
+    int colend = bsize * (M / bsize);
     int i, j, k, l;
     // block
-    for (i = 0; i < end; i += bsize) {
-        for (j = 0; j < end; j += bsize) { 
+    for (i = 0; i < rowend; i += bsize) {
+
+        for (j = 0; j < colend; j += bsize) { 
             for (int c = 0; c < bsize; ++c) {
                 k = i + c;
                 l = j + c;
                 B[l][k] = A[k][l];
-
                 for (k = i; k < i + bsize; ++k) {
-                    if (k == i + c) {
+                    if (k == i + c)
                         continue;
-                    } 
                     B[l][k] = A[k][l];
                 }
             }
         }
     }
-}
 
-void transposeBy64(int A[64][64], int B[64][64]) {
-    int bsize = 4;
-    int end = 64;
-    int i, j, k, l;
-    // block
-
-    for (i = 0; i < end; i += bsize) {
-        for (j = 0; j < end; j += bsize) { 
-            for (int c = 0; c < bsize; ++c) {
-                k = i + c;
-                l = j + c;
-                B[l][k] = A[k][l];
-                for (k = i; k < i + bsize; ++k) {
-                    if (k == i + c) {
-                        continue;
-                    } 
-                    B[l][k] = A[k][l];
-                }
-            } 
-        }
-    }
-}
-
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
-    if (M == 32 && N == 32) {
-        transposeBy32(A, B);
-        return ;
-    }
-    
-    if (M == 64 && N == 64) {
-        transposeBy64(A, B);
-    }
-    
 
     if (M == N)
         return ;
 
-    // A: 67 x 61
-    // for (k = i; k < N; ++k) 
-    //     for (l = j; l < M; ++l)
-    //         B[l][k] = A[k][l];
+    // a: 67 x 61
+    for (k = i; k < N; ++k) 
+        for (l = j; l < M; ++l)
+            B[l][k] = A[k][l];
     
-    // for (k = i; k < N; ++k)
-    //     for (l = 0; l < j; ++l)
-    //         B[l][k] = A[k][l];
+    for (k = i; k < N; ++k)
+        for (l = 0; l < j; ++l)
+            B[l][k] = A[k][l];
 
-    // for (k = j; k < M; ++k) 
-    //     for (l = 0; l < i; ++l)
-    //         B[k][l] = A[l][k];
+    for (k = j; k < M; ++k) 
+        for (l = 0; l < i; ++l)
+            B[k][l] = A[l][k];
 
 }
 
@@ -102,7 +71,7 @@ void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
  */ 
 
 /* 
- * trans - A simple baseline transpose function, not optimized for the cache.
+ * trans - A simple baseline transpose function, Not optimized for the cache.
  */
 char *trans_zig_zag_desc = "Block zig zag scan transpose";
 void transpose_zig_zag(int M, int N, int A[N][M], int B[M][N]) {
@@ -169,18 +138,30 @@ void transpose_zig_zag(int M, int N, int A[N][M], int B[M][N]) {
 
 char *trans_block_desc = "Block reverse row-wise scan transpose";
 void transpose_block(int M, int N, int A[N][M], int B[M][N]) {
-    int bsize = 8 * 32 / M;
-
-    int rowEnd = bsize * (N / bsize); 
+    int bsize = 32 * 8 / M;
+    if (M == 61) 
+        bsize = 12;
+    int rowEnd = bsize * (N / bsize);
     int colEnd = bsize * (M / bsize);
-
     int i, j, k, l;
     // block
-    for (i = 0; i < rowEnd; i += bsize) 
-        for (j = 0; j < colEnd; j += bsize) 
-            for (l = j + bsize - 1; l >= j; --l)
-                for (k = i; k < i + bsize; ++k) 
+    for (i = 0; i < rowEnd; i += bsize) {
+        for (j = 0; j < colEnd; j += bsize) { 
+            for (int c = 0; c < bsize; ++c) {
+                k = i + c;
+                l = j + c;
+                B[l][k] = A[k][l];
+
+                for (k = i; k < i + bsize; ++k) {
+                    if (k == i + c) {
+                        continue;
+                    } 
                     B[l][k] = A[k][l];
+                }
+            }
+        }
+    }
+
 
     if (M == N)
         return ;
@@ -256,7 +237,7 @@ void registerFunctions()
 /* 
  * is_transpose - This helper function checks if B is the transpose of
  *     A. You can check the correctness of your transpose by calling
- *     it before returning from the transpose function.
+ *     it before returning froM the transpose function.
  */
 int is_transpose(int M, int N, int A[N][M], int B[M][N])
 {
