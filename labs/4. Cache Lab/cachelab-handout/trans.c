@@ -19,51 +19,113 @@ int is_transpose(int M, int N, int A[N][M], int B[M][N]);
  *     searches for that string to identify the transpose function to
  *     be graded. 
  */
-char transpose_submit_desc[] = "Transpose submission";
+void transposeBy32(int A[32][32], int B[32][32]) {
+    for (int i = 0; i < 32; i += 8) {
+        for (int j = 0; j < 32; j += 8) {
+            for (int k = i; k < i + 8; ++k) {
+                int a0 = A[k][j];
+                int a1 = A[k][j + 1];
+                int a2 = A[k][j + 2];
+                int a3 = A[k][j + 3];
+                int a4 = A[k][j + 4];
+                int a5 = A[k][j + 5];
+                int a6 = A[k][j + 6];
+                int a7 = A[k][j + 7];
+            
+                B[j][k] = a0;
+                B[j + 1][k] = a1;
+                B[j + 2][k] = a2;
+                B[j + 3][k] = a3;
+                B[j + 4][k] = a4;
+                B[j + 5][k] = a5;
+                B[j + 6][k] = a6;
+                B[j + 7][k] = a7;
+            }
+        }
+    }
+}
 
-void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
-    int bsize = 32 * 8 / M;
-    if (M == 61) 
-        bsize = 12;
-    int rowend = bsize * (N / bsize);
-    int colend = bsize * (M / bsize);
-    int i, j, k, l;
-    // block
-    for (i = 0; i < rowend; i += bsize) {
-
-        for (j = 0; j < colend; j += bsize) { 
-            for (int c = 0; c < bsize; ++c) {
-                k = i + c;
-                l = j + c;
-                B[l][k] = A[k][l];
-                for (k = i; k < i + bsize; ++k) {
-                    if (k == i + c)
-                        continue;
+void transposeBy6167(int A[67][61], int B[61][67]) {
+    int bsize = 16;
+    for (int i = 0; i < 67; i += bsize) {
+        for (int j = 0; j < 67; j += bsize) {
+            for (int k = i; k < 67 && k < i + bsize; ++k) {
+                for (int l = j; l < 61 && l < j + bsize; ++l) {
                     B[l][k] = A[k][l];
                 }
             }
         }
     }
-
-
-    if (M == N)
-        return ;
-
-    // a: 67 x 61
-    for (k = i; k < N; ++k) 
-        for (l = j; l < M; ++l)
-            B[l][k] = A[k][l];
-    
-    for (k = i; k < N; ++k)
-        for (l = 0; l < j; ++l)
-            B[l][k] = A[k][l];
-
-    for (k = j; k < M; ++k) 
-        for (l = 0; l < i; ++l)
-            B[k][l] = A[l][k];
-
 }
 
+
+void transposeBy64(int A[64][64], int B[64][64]) {
+    for (int i = 0; i < 64; i += 8) {
+        for (int j = 0; j < 64; j += 8) {
+            for (int k = i; k < i + 4; ++k) {
+                int a0 = A[k][j];
+                int a1 = A[k][j + 1];
+                int a2 = A[k][j + 2];
+                int a3 = A[k][j + 3];
+                int a4 = A[k][j + 4];
+                int a5 = A[k][j + 5];
+                int a6 = A[k][j + 6];
+                int a7 = A[k][j + 7];
+
+                B[j][k] = a0;
+                B[j + 1][k] = a1;
+                B[j + 2][k] = a2;
+                B[j + 3][k] = a3;
+                B[j][k + 4] = a4;
+                B[j + 1][k + 4] = a5;
+                B[j + 2][k + 4] = a6;
+                B[j + 3][k + 4] = a7;
+            }
+
+            for (int l = j + 4; l < j + 8; ++l) {
+                int a0 = A[i + 4][l - 4];
+                int a1 = A[i + 5][l - 4];
+                int a2 = A[i + 6][l - 4];
+                int a3 = A[i + 7][l - 4];
+
+                int a4 = B[l - 4][i + 4];
+                int a5 = B[l - 4][i + 5];
+                int a6 = B[l - 4][i + 6];
+                int a7 = B[l - 4][i + 7];
+
+                B[l - 4][i + 4] = a0; 
+                B[l - 4][i + 5] = a1;
+                B[l - 4][i + 6] = a2;
+                B[l - 4][i + 7] = a3;
+
+                B[l][i] = a4;
+                B[l][i + 1] = a5;
+                B[l][i + 2] = a6;
+                B[l][i + 3] = a7;
+
+                B[l][i + 4] = A[i + 4][l];
+                B[l][i + 5] = A[i + 5][l];
+                B[l][i + 6] = A[i + 6][l];
+                B[l][i + 7] = A[i + 7][l];
+            }
+
+        }
+    }
+}
+
+
+char transpose_submit_desc[] = "Transpose submission";
+void transpose_submit(int M, int N, int A[N][M], int B[M][N]) {
+    if (M == 32 && N == 32) {
+        transposeBy32(A, B);
+    }
+    if (M == 64 && N == 64) {
+        transposeBy64(A, B);
+    }
+    if (M == 61 && N == 67) {
+        transposeBy6167(A, B);
+    }
+}
 
 /* 
  * You can define additional transpose functions below. We've defined
