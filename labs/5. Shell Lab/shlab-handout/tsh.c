@@ -85,6 +85,19 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+
+// here are some user defined helper functions
+pid_t Fork(void);
+void Execve(char *filename, char **argv, char **envp);
+int Sigemptyset(sigset_t *set);
+int Sigfillset(sigset_t *set);
+int Sigaddset(sigset_t *set, int signum);
+int Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+int Sigsuspend(const sigset_t *mask);
+struct job_t *getjob(struct job_t *jobs, char *id); // get job by pid or jid
+
+
+
 /*
  * main - The shell's main routine 
  */
@@ -103,16 +116,16 @@ int main(int argc, char **argv)
         switch (c) {
         case 'h':             /* print help message */
             usage();
-	    break;
+	        break;
         case 'v':             /* emit additional diagnostic info */
             verbose = 1;
-	    break;
+	        break;
         case 'p':             /* don't print a prompt */
             emit_prompt = 0;  /* handy for automatic testing */
-	    break;
-	default:
+	        break;
+	    default:
             usage();
-	}
+	    }
     }
 
     /* Install the signal handlers */
@@ -130,23 +143,22 @@ int main(int argc, char **argv)
 
     /* Execute the shell's read/eval loop */
     while (1) {
+        /* Read command line */
+        if (emit_prompt) {
+            printf("%s", prompt);
+            fflush(stdout);
+        }
+        if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
+            app_error("fgets error");
+        if (feof(stdin)) { /* End of file (ctrl-d) */
+            fflush(stdout);
+            exit(0);
+        }
 
-	/* Read command line */
-	if (emit_prompt) {
-	    printf("%s", prompt);
-	    fflush(stdout);
-	}
-	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
-	    app_error("fgets error");
-	if (feof(stdin)) { /* End of file (ctrl-d) */
-	    fflush(stdout);
-	    exit(0);
-	}
-
-	/* Evaluate the command line */
-	eval(cmdline);
-	fflush(stdout);
-	fflush(stdout);
+        /* Evaluate the command line */
+        eval(cmdline);
+        fflush(stdout);
+        fflush(stdout);
     } 
 
     exit(0); /* control never reaches here */
@@ -165,6 +177,41 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char *argv[MAXARGS];    // because of the "static" array in parseline
+                            // needn't use a 2-dim array
+
+    int bg = parseline(cmdline, argv);
+    if (argv[0] == 0)  // blank line
+        return ;
+
+    // if builtin command, do nothing else
+    if (!builtin_cmd(argv)) {
+        // if not, create a child process, then load the program in it
+
+        sigset_t sigset; 
+        sigset_t oldset;
+        Sigemptyset(&sigset);
+        Sigaddset(&sigset, SIGCHLD);
+
+        pid_t child_id = Fork();
+
+        Sigprocmask(SIG_BLOCK, &sigset, &oldset); // block SIGCHLD
+        if (child_id == 0) {
+            // child process
+            Sigprocmask(SIG_SETMASK, &oldset, NULL);
+            Execve(argv[0], argv, environ);  // wrapper for execve, never return
+                                             // even if errors happened
+        } 
+
+        // parent process
+        addjob(jobs, child_id, bg + 1, cmdline); // if fg, then state = 1
+                                                 // bg, state = 2
+        Sigprocmask(SIG_SETMASK, &oldset, NULL); // unblock SIGCHLD
+
+        if (!bg) // foreground job 
+            waitfg(child_id);
+    } 
+
     return;
 }
 
@@ -231,6 +278,17 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    char *cmd = argv[0];
+    if (!strcmp(cmd, "quit")) {
+        exit(0);
+    } else if (!strcmp(cmd, "fg") || !strcmp(cmd, "bg")) {
+        do_bgfg(argv);
+        return 1;
+    } else if (!strcmp(cmd, "jobs")) {
+        listjobs(jobs);
+        return 1;
+    }
+
     return 0;     /* not a builtin command */
 }
 
@@ -239,6 +297,15 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    struct job_t *jobp = getjob(jobs, argv[1]);
+    if (!strcmp(argv[0], "bg")) {
+        kill(jobp->pid, SIGCONT);
+        jobp->state = BG;
+    } else if (!strcmp(argv[0], "fg")) {
+        kill(jobp->pid, SIGCONT);
+        jobp->state = FG;
+        waitfg(jobp->pid);
+    }
     return;
 }
 
@@ -247,6 +314,18 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    sigset_t sigset;
+    sigset_t oldset;
+
+    Sigemptyset(&sigset);
+    Sigaddset(&sigset, SIGCHLD); 
+    Sigprocmask(SIG_BLOCK, &sigset, &oldset); // Block SIGCHLD
+    struct job_t *jobp = getjobpid(jobs, pid);
+ 
+    while (jobp->state == FG) {
+        Sigsuspend(&oldset); 
+    }  
+    Sigprocmask(SIG_SETMASK, &oldset, NULL); // Unblock SIGCHLD
     return;
 }
 
@@ -263,6 +342,21 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    int status;
+    int pid;
+
+    sigset_t sigset;
+    sigset_t oldset;
+    Sigfillset(&sigset);
+
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        Sigprocmask(SIG_BLOCK, &sigset, &oldset);
+        deletejob(jobs, pid); 
+        Sigprocmask(SIG_SETMASK, &oldset, NULL);
+    }
+    
+    if (errno != ECHILD) 
+        unix_error("waitpid error");
     return;
 }
 
@@ -506,4 +600,62 @@ void sigquit_handler(int sig)
 }
 
 
+// definition of user defined helper functions
+pid_t Fork(void) {
+    pid_t pid = fork();
+    if (pid < 0) 
+        unix_error("Fork error");
+    return pid;
+} 
 
+void Execve(char *filename, char **argv, char **envp) {
+    execve(filename, argv, envp);
+    unix_error("Execve error");    
+}
+
+int Sigemptyset(sigset_t *set) {
+    int err = sigemptyset(set);
+    if (err < 0) 
+        unix_error("Sigemptyset error");
+    return err;
+}
+
+int Sigaddset(sigset_t *set, int signum) {
+    int err = sigaddset(set, signum);
+    if (err < 0) 
+        unix_error("Sigaddset error");
+    return err;
+}
+
+int Sigfillset(sigset_t *set) {
+    int err = sigfillset(set);
+    if (err < 0) 
+        unix_error("Sigfillset error");
+    return err;
+}
+
+int Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+    int err = sigprocmask(how, set, oldset);
+    if (err < 0) 
+        unix_error("Sigprocmask error");
+    return err;
+}
+
+
+int Sigsuspend(const sigset_t *mask) {
+    int err = sigsuspend(mask);
+    if (errno != EINTR) // the wrong case is errno != EINTR 
+        unix_error("Sigsuspend error");
+    return err;
+}
+
+struct job_t *getjob(struct job_t *jobs, char *id) {
+    if (id[0] == '%') {
+        int jid = atoi(id + 1);
+        return getjobjid(jobs, jid);
+    }
+    else {
+        int pid = atoi(id);
+        return getjobpid(jobs, pid);
+    }
+}
