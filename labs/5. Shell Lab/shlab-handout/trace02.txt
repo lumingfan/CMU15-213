@@ -1,10 +1,4 @@
 #
-<<<<<<< HEAD
-# trace02.txt - Process builtin quit command.
-#
-quit
-WAIT
-=======
 # trace02.txt - Run a foreground job that prints an environment variable
 #
 # IMPORTANT: You must pass this trace before attempting any later
@@ -14,4 +8,3 @@ WAIT
 ./myenv
 NEXT
 
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

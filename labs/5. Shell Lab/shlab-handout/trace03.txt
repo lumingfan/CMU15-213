@@ -1,10 +1,4 @@
 #
-<<<<<<< HEAD
-# trace03.txt - Run a foreground job.
-#
-/bin/echo tsh> quit
-quit
-=======
 # trace03.txt - Run a synchronizing foreground job without any arguments.
 #
 ./myspin1
@@ -14,4 +8,3 @@ SIGNAL
 
 quit
 
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

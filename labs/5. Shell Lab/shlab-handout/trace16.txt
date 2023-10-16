@@ -1,21 +1,4 @@
 #
-<<<<<<< HEAD
-# trace16.txt - Tests whether the shell can handle SIGTSTP and SIGINT
-#     signals that come from other processes instead of the terminal.
-#
-
-/bin/echo tsh> ./mystop 2 
-./mystop 2
-
-SLEEP 3
-
-/bin/echo tsh> jobs
-jobs
-
-/bin/echo tsh> ./myint 2 
-./myint 2
-
-=======
 # trace16.txt - Process bg builtin command (two jobs)
 #
 
@@ -49,4 +32,3 @@ NEXT
 SIGNAL 
 
 quit
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

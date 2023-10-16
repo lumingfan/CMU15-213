@@ -1,13 +1,4 @@
 #
-<<<<<<< HEAD
-# trace06.txt - Forward SIGINT to foreground job.
-#
-/bin/echo -e tsh> ./myspin 4
-./myspin 4 
-
-SLEEP 2
-INT
-=======
 # trace06.txt - Run a foreground job and a background job.
 #
 /bin/echo -e tsh\076 ./myspin1 \046
@@ -26,4 +17,3 @@ SIGNAL
 NEXT
 
 quit
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

@@ -1,16 +1,4 @@
 #
-<<<<<<< HEAD
-# trace05.txt - Process jobs builtin command.
-#
-/bin/echo -e tsh> ./myspin 2 \046
-./myspin 2 &
-
-/bin/echo -e tsh> ./myspin 3 \046
-./myspin 3 &
-
-/bin/echo tsh> jobs
-jobs
-=======
 # trace05.txt - Run a background job.
 #
 /bin/echo -e tsh\076 ./myspin1 \046
@@ -24,4 +12,3 @@ SIGNAL
 /bin/echo -e tsh\076 quit
 NEXT
 quit
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

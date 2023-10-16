@@ -1,25 +1,4 @@
 #
-<<<<<<< HEAD
-# trace09.txt - Process bg builtin command
-#
-/bin/echo -e tsh> ./myspin 4 \046
-./myspin 4 &
-
-/bin/echo -e tsh> ./myspin 5
-./myspin 5 
-
-SLEEP 2
-TSTP
-
-/bin/echo tsh> jobs
-jobs
-
-/bin/echo tsh> bg %2
-bg %2
-
-/bin/echo tsh> jobs
-jobs
-=======
 # trace09.txt - Send SIGTSTP to foreground job.
 #
 /bin/echo -e tsh\076 ./mytstpp
@@ -33,4 +12,3 @@ jobs
 NEXT
 
 quit
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

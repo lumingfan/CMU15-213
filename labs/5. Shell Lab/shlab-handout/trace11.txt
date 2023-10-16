@@ -1,17 +1,4 @@
 #
-<<<<<<< HEAD
-# trace11.txt - Forward SIGINT to every process in foreground process group
-#
-/bin/echo -e tsh> ./mysplit 4
-./mysplit 4 
-
-SLEEP 2
-INT
-
-/bin/echo tsh> /bin/ps a
-/bin/ps a
-
-=======
 # trace11.txt - Child sends SIGINT to itself
 #
 /bin/echo -e tsh\076 ./myints
@@ -22,4 +9,3 @@ NEXT
 /bin/echo -e tsh\076 quit
 NEXT
 quit
->>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)
