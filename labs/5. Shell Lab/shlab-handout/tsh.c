@@ -102,6 +102,35 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+// here are some helper/wrapper functions that are defined by me
+
+// wrapper
+int Kill(pid_t pid, int sig);
+int Open(const char *pathname, int flags);
+int Close(int fd);
+int Sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
+int Sigemptyset(sigset_t *set);
+int Sigfillset(sigset_t *set);
+int Sigaddset(sigset_t *set, int signum);
+int Fork();
+void Execve(char *filename, char **argv, char **envp);
+
+
+
+// helper
+
+// process bulitin bg and fg
+void builtin_bgfg(struct cmdline_tokens *tok);     
+
+// getjob by either pid or jid
+struct job_t *getjob(struct job_t *jobs, char *id, char *name);     
+
+// wait for foregound job to finish or be stopped 
+void waitfg(pid_t pid, sigset_t *signal);
+
+
+
+
 /*
  * main - The shell's main routine 
  */
@@ -193,6 +222,56 @@ main(int argc, char **argv)
 void 
 eval(char *cmdline) 
 {
+    struct cmdline_tokens tok;
+    int bg = parseline(cmdline, &tok);
+    if (bg < 0)  // cmdline is incorrectly formatted
+        return;
+
+    if (tok.argc == 0)  // blank line
+        return ;
+
+    int in = tok.infile ? Open(tok.infile, O_RDONLY): 0;
+    int out = tok.outfile ? Open(tok.outfile, O_WRONLY | O_CREAT): 1;
+
+    sigset_t chldset, oldset;
+    Sigemptyset(&chldset);
+    Sigaddset(&chldset, SIGCHLD | SIGINT | SIGTSTP);
+
+    switch (tok.builtins) {
+    case BUILTIN_QUIT:          // quit
+        if (tok.infile) Close(in);
+        if (tok.outfile) Close(out);
+        exit(0);
+    case BUILTIN_JOBS:          // list jobs
+        listjobs(job_list, in);
+        break;
+    case BUILTIN_FG:            // run job in foreground
+    case BUILTIN_BG:            // run job in background
+        builtin_bgfg(&tok);
+        break;
+    case BUILTIN_NONE:          // load a program
+        pid_t child_pid = Fork();
+        Sigprocmask(SIG_BLOCK, &chldset, &oldset); // block signals
+        if (child_pid == 0) {   // child
+            setpgid(0, 0);      // set child's group id to its pid
+            Sigprocmask(SIG_SETMASK, &oldset, NULL); // unblock
+            Execve(tok.argv[0], tok.argv, environ);
+            // code can't get here 
+        } else {
+            // parent 
+            addjob(job_list, child_pid, bg + 1, cmdline); // BG  = 2, FG = 1 
+            if (!bg) 
+                waitfg(child_pid, &oldset);          // unblock (temp)
+            Sigprocmask(SIG_SETMASK, &oldset, NULL); // unblock
+        }
+        break;
+    }
+
+
+    if (tok.infile) 
+        Close(in);
+    if (tok.outfile)
+        Close(out);
     return;
 }
 
@@ -359,6 +438,35 @@ parseline(const char *cmdline, struct cmdline_tokens *tok)
 void 
 sigchld_handler(int sig) 
 {
+    sigset_t fillset, oldset;
+    Sigfillset(&fillset);
+    
+    pid_t pid;
+    int status;
+
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+
+        Sigprocmask(SIG_BLOCK, &fillset, &oldset);
+        struct job_t *job = getjobpid(job_list, pid);
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+            if (WIFSIGNALED(status)) 
+                printf("Job [%d] (%d) terminated by signal %d\n", 
+                        pid2jid(pid), pid, WTERMSIG(status));
+
+            deletejob(job_list, pid);
+
+        } else if (WIFSTOPPED(status)) {
+            job->state = ST;
+            printf("Job [%d] (%d) stopped by signal %d\n",
+                    pid2jid(pid), pid, WSTOPSIG(status));
+        }
+        Sigprocmask(SIG_SETMASK, &oldset, NULL);
+    }
+
+    if (pid < 0 && errno != ECHILD) 
+        unix_error("waitpid error");
+
+
     return;
 }
 
@@ -637,3 +745,129 @@ sigquit_handler(int sig)
     exit(1);
 }
 
+// customized defined helper/wrapper function
+
+// wrapper
+int Kill(pid_t pid, int sig) {
+    int retval = kill(pid, sig);
+    if (kill < 0) 
+        unix_error("Kill error");
+    return retval;
+}
+
+int Open(const char *pathname, int flags) {
+    int retval = open(pathname, flags);
+    if (retval < 0) {
+        if (errno == ENOENT)
+            printf("Error: %s No such file or directory\n", pathname);
+        else 
+            unix_error("Open error");
+    }
+    return retval;
+}
+
+int Close(int fd) {
+    int retval = close(fd);
+    if (retval < 0) 
+        unix_error("Close error");
+    return retval;
+}
+
+int Sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
+    int retval = sigprocmask(how, set, oldset);
+    if (retval < 0)
+        unix_error("Sigprocmask error");
+    return retval;
+}
+
+int Sigemptyset(sigset_t *set) {
+    int retval = sigemptyset(set);
+    if (retval < 0)
+        unix_error("Sigemptyset error");
+    return retval;
+}
+
+int Sigfillset(sigset_t *set) {
+    int retval = sigfillset(set);
+    if (retval < 0)
+        unix_error("Sigfillset error");
+    return retval;
+}
+
+int Sigaddset(sigset_t *set, int signum) {
+    int retval = sigaddset(set, signum);
+    if (retval < 0)
+        unix_error("Sigaddset error");
+    return retval;
+}
+
+
+int Fork() {
+    int retval = fork();
+    if (retval < 0)
+        unix_error("Fork error");
+    return retval;
+}
+
+void Execve(char *filename, char **argv, char **envp) {
+    execve(filename, argv, envp);
+    printf("%s: Command not found\n", filename);
+    exit(1);
+}
+
+
+
+
+// helper
+void builtin_bgfg(struct cmdline_tokens *tok) {
+    if (tok->argc == 1) {    // no specific pid/jid
+        printf("%s command requires PID or %%jobid argument\n", tok->argv[0]);
+        return ;
+    }
+    struct job_t *job = getjob(job_list, tok->argv[1], tok->argv[0]);
+    if (job == NULL)  // all prompt message have been processed in getjob
+        return ;
+    
+    if (tok->builtins == BUILTIN_FG) { // fg
+        kill(-job->pid, SIGCONT); 
+        job->state = FG;
+        sigset_t fillset, oldset;
+        Sigfillset(&fillset);
+        Sigprocmask(SIG_BLOCK, &fillset, &oldset);
+        waitfg(job->pid, &oldset);
+    } else { // bg
+        kill(-job->pid, SIGCONT);
+        job->state = BG;
+    }
+
+    return ;
+}
+
+
+struct job_t *getjob(struct job_t *jobs, char *id, char *name) {
+    struct job_t *job;
+    if (id[0] != '%' && !isdigit(id[0])) {
+        printf("%s: argument must be a PID or %%jobid\n", name);
+        return NULL;
+    } else if (id[0] == '%') {  // jid
+        job = getjobjid(jobs, atoi(id + 1));  
+        if (job == NULL) 
+            printf("%s: No such job", id);    
+        return job;
+    } else { //pid
+        job = getjobpid(jobs, atoi(id));
+        if (job == NULL) 
+            printf("(%s): No such process", id);
+        return job;
+    }
+}
+
+// every function which calls waitfg must first block signal
+void waitfg(pid_t pid, sigset_t *oldset) {
+    struct job_t *job = getjobpid(job_list, pid);
+    while (job->state == FG) {
+        sigsuspend(oldset);                 // release block (temp)
+    }
+
+    Sigprocmask(SIG_SETMASK, oldset, NULL); // release block
+}
