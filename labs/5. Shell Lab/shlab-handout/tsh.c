@@ -129,6 +129,9 @@ struct job_t *getjob(struct job_t *jobs, char *id, char *name);
 void waitfg(pid_t pid, sigset_t *signal);
 
 
+void load_program(struct cmdline_tokens *tok, char *cmdline, int bg);
+
+
 
 
 /*
@@ -233,10 +236,6 @@ eval(char *cmdline)
     int in = tok.infile ? Open(tok.infile, O_RDONLY): 0;
     int out = tok.outfile ? Open(tok.outfile, O_WRONLY | O_CREAT): 1;
 
-    sigset_t chldset, oldset;
-    Sigemptyset(&chldset);
-    Sigaddset(&chldset, SIGCHLD | SIGINT | SIGTSTP);
-
     switch (tok.builtins) {
     case BUILTIN_QUIT:          // quit
         if (tok.infile) Close(in);
@@ -250,23 +249,9 @@ eval(char *cmdline)
         builtin_bgfg(&tok);
         break;
     case BUILTIN_NONE:          // load a program
-        pid_t child_pid = Fork();
-        Sigprocmask(SIG_BLOCK, &chldset, &oldset); // block signals
-        if (child_pid == 0) {   // child
-            setpgid(0, 0);      // set child's group id to its pid
-            Sigprocmask(SIG_SETMASK, &oldset, NULL); // unblock
-            Execve(tok.argv[0], tok.argv, environ);
-            // code can't get here 
-        } else {
-            // parent 
-            addjob(job_list, child_pid, bg + 1, cmdline); // BG  = 2, FG = 1 
-            if (!bg) 
-                waitfg(child_pid, &oldset);          // unblock (temp)
-            Sigprocmask(SIG_SETMASK, &oldset, NULL); // unblock
-        }
+        load_program(&tok, cmdline, bg);
         break;
     }
-
 
     if (tok.infile) 
         Close(in);
@@ -445,17 +430,15 @@ sigchld_handler(int sig)
     int status;
 
     while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
-
         Sigprocmask(SIG_BLOCK, &fillset, &oldset);
-        struct job_t *job = getjobpid(job_list, pid);
-        if (WIFEXITED(status) || WIFSIGNALED(status)) {
-            if (WIFSIGNALED(status)) 
-                printf("Job [%d] (%d) terminated by signal %d\n", 
-                        pid2jid(pid), pid, WTERMSIG(status));
-
+        if (WIFEXITED(status)) {
             deletejob(job_list, pid);
-
+        } else if (WIFSIGNALED(status)) {
+            deletejob(job_list, pid);
+            printf("Job [%d] (%d) terminated by signal %d\n", 
+                    pid2jid(pid), pid, WTERMSIG(status));
         } else if (WIFSTOPPED(status)) {
+            struct job_t *job = getjobpid(job_list, pid);
             job->state = ST;
             printf("Job [%d] (%d) stopped by signal %d\n",
                     pid2jid(pid), pid, WSTOPSIG(status));
@@ -465,8 +448,6 @@ sigchld_handler(int sig)
 
     if (pid < 0 && errno != ECHILD) 
         unix_error("waitpid error");
-
-
     return;
 }
 
@@ -812,7 +793,7 @@ int Fork() {
 void Execve(char *filename, char **argv, char **envp) {
     execve(filename, argv, envp);
     printf("%s: Command not found\n", filename);
-    exit(1);
+    exit(0);
 }
 
 
@@ -870,4 +851,23 @@ void waitfg(pid_t pid, sigset_t *oldset) {
     }
 
     Sigprocmask(SIG_SETMASK, oldset, NULL); // release block
+}
+
+void load_program(struct cmdline_tokens *tok, char *cmdline, int bg) {
+    sigset_t fillset;
+    sigset_t oldset;
+    Sigfillset(&fillset);
+
+    Sigprocmask(SIG_BLOCK, &fillset, &oldset);
+    int pid = Fork();
+    if (pid == 0) {
+        setpgid(0, 0);
+        Sigprocmask(SIG_SETMASK, &oldset, NULL); 
+        Execve(tok->argv[0], tok->argv, environ);
+    }
+
+    addjob(job_list, pid, bg + 1, cmdline);
+    if (!bg) 
+        waitfg(pid, &oldset);
+    Sigprocmask(SIG_SETMASK, &oldset, NULL); 
 }
