@@ -198,6 +198,7 @@ void eval(char *cmdline)
         Sigprocmask(SIG_BLOCK, &sigset, &oldset); // block SIGCHLD
         if (child_id == 0) {
             // child process
+            setpgid(0, 0);
             Sigprocmask(SIG_SETMASK, &oldset, NULL);
             Execve(argv[0], argv, environ);  // wrapper for execve, never return
                                              // even if errors happened
@@ -210,6 +211,11 @@ void eval(char *cmdline)
 
         if (!bg) // foreground job 
             waitfg(child_id);
+        else {
+            struct job_t *jobp = getjobpid(jobs, child_id);
+            fprintf(stdout, "[%d] (%d) %s", 
+                    jobp->jid, jobp->pid, jobp->cmdline);
+        }
     } 
 
     return;
@@ -355,7 +361,7 @@ void sigchld_handler(int sig)
         Sigprocmask(SIG_SETMASK, &oldset, NULL);
     }
     
-    if (errno != ECHILD) 
+    if (pid < 0 && errno != ECHILD) 
         unix_error("waitpid error");
     return;
 }
@@ -367,6 +373,18 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    sigset_t sigset;
+    sigset_t oldset;
+    Sigfillset(&sigset);
+    Sigprocmask(SIG_BLOCK, &sigset, &oldset);
+ 
+    pid_t fpid = fgpid(jobs);
+    if (fpid > 0) {
+        printf("Job [%d] (%d) terminated by signal %d\n", 
+                pid2jid(fpid), fpid, SIGINT);
+        kill(fpid, SIGINT);
+    }
+    Sigprocmask(SIG_SETMASK, &oldset, NULL);
     return;
 }
 
@@ -377,6 +395,18 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    sigset_t sigset;
+    sigset_t oldset;
+    Sigfillset(&sigset);
+    Sigprocmask(SIG_BLOCK, &sigset, &oldset);
+
+    pid_t fpid = fgpid(jobs);
+    if (fpid > 0) {
+        printf("Job [%d] (%d) terminated by signal %d\n", 
+                pid2jid(fpid), fpid, SIGTSTP);
+        kill(fpid, SIGTSTP);
+    }
+    Sigprocmask(SIG_SETMASK, &oldset, NULL);
     return;
 }
 
