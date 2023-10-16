@@ -1,4 +1,5 @@
 #
+<<<<<<< HEAD
 # trace07.txt - Forward SIGINT only to foreground job.
 #
 /bin/echo -e tsh> ./myspin 4 \046
@@ -12,3 +13,29 @@ INT
 
 /bin/echo tsh> jobs
 jobs
+=======
+# trace07.txt - Use the jobs builtin command.
+#
+/bin/echo -e tsh\076 ./myspin1 10 \046
+NEXT
+./myspin1 10 &
+NEXT
+
+/bin/echo -e tsh\076 ./myspin2 10 \046
+NEXT
+./myspin2 10 &
+NEXT
+
+WAIT
+WAIT
+
+/bin/echo -e tsh\076 jobs
+NEXT
+jobs
+NEXT
+
+quit
+
+
+
+>>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)

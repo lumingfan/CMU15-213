@@ -1,4 +1,5 @@
 #
+<<<<<<< HEAD
 # trace13.txt - Restart every stopped process in process group
 #
 /bin/echo -e tsh> ./mysplit 4
@@ -20,4 +21,28 @@ fg %1
 /bin/ps a
 
 
+=======
+# trace13.txt - Forward SIGINT to foreground job only.
+#
+/bin/echo -e tsh\076 ./myspin1 5 \046
+NEXT
+./myspin1 5 &
+NEXT
+
+WAIT
+
+/bin/echo -e tsh\076 ./myintp
+NEXT
+./myintp
+NEXT
+
+/bin/echo -e tsh\076 jobs
+NEXT
+jobs
+NEXT
+
+SIGNAL
+
+quit
+>>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)
 

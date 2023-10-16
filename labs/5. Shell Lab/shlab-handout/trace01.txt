@@ -1,5 +1,12 @@
 #
+<<<<<<< HEAD
 # trace01.txt - Properly terminate on EOF.
 #
 CLOSE
 WAIT
+=======
+# trace01.txt - Process builtin quit command.
+#
+quit
+
+>>>>>>> 12e09c8 (shell lab: add shell lab start code and write up)
