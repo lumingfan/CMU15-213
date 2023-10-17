@@ -129,7 +129,9 @@ struct job_t *getjob(struct job_t *jobs, char *id, char *name);
 void waitfg(pid_t pid, sigset_t *signal);
 
 
-void load_program(struct cmdline_tokens *tok, char *cmdline, int bg);
+// in: file descriptor of opened input file
+void load_program(struct cmdline_tokens *tok, char *cmdline, 
+                  int bg, int in, int out);
 
 
 
@@ -242,14 +244,14 @@ eval(char *cmdline)
         if (tok.outfile) Close(out);
         exit(0);
     case BUILTIN_JOBS:          // list jobs
-        listjobs(job_list, in);
+        listjobs(job_list, out);
         break;
     case BUILTIN_FG:            // run job in foreground
     case BUILTIN_BG:            // run job in background
         builtin_bgfg(&tok);
         break;
     case BUILTIN_NONE:          // load a program
-        load_program(&tok, cmdline, bg);
+        load_program(&tok, cmdline, bg, in, out);
         break;
     }
 
@@ -860,7 +862,8 @@ void waitfg(pid_t pid, sigset_t *oldset) {
     Sigprocmask(SIG_SETMASK, oldset, NULL); // release block
 }
 
-void load_program(struct cmdline_tokens *tok, char *cmdline, int bg) {
+void load_program(struct cmdline_tokens *tok, char *cmdline, 
+                  int bg, int in, int out) {
     sigset_t fillset;
     sigset_t oldset;
     Sigemptyset(&fillset);
@@ -873,6 +876,10 @@ void load_program(struct cmdline_tokens *tok, char *cmdline, int bg) {
     int pid = Fork();
     if (pid == 0) {
         setpgid(0, 0);
+        if (in != 0) // not stdin
+            dup2(in, 0);
+        if (out != 1) // not stdout
+            dup2(out, 1);
         Sigprocmask(SIG_SETMASK, &oldset, NULL); 
         Execve(tok->argv[0], tok->argv, environ);
     }
