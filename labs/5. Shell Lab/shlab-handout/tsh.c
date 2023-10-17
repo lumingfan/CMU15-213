@@ -872,22 +872,24 @@ void load_program(struct cmdline_tokens *tok, char *cmdline,
     Sigaddset(&fillset, SIGTSTP);
 
 
-    Sigprocmask(SIG_BLOCK, &fillset, &oldset);
+    Sigprocmask(SIG_BLOCK, &fillset, &oldset);      // block signals
     int pid = Fork();
     if (pid == 0) {
-        setpgid(0, 0);
+        setpgid(0, 0);                              // differ child's gid
         if (in != 0) // not stdin
             dup2(in, 0);
         if (out != 1) // not stdout
             dup2(out, 1);
-        Sigprocmask(SIG_SETMASK, &oldset, NULL); 
+        Sigprocmask(SIG_SETMASK, &oldset, NULL);    // release signal(temp)
         Execve(tok->argv[0], tok->argv, environ);
     }
 
     addjob(job_list, pid, bg + 1, cmdline);
     if (!bg) 
-        waitfg(pid, &oldset);
+        waitfg(pid, &oldset);          // signal will be released in waitfg
     else 
         printf("[%d] (%d) %s\n", pid2jid(pid), pid, cmdline);
-    Sigprocmask(SIG_SETMASK, &oldset, NULL); 
+    
+    Sigprocmask(SIG_SETMASK, &oldset, NULL); // realse again here
+                                             // to handler bg == 1
 }
