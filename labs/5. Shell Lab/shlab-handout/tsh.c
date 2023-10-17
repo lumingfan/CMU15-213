@@ -434,9 +434,9 @@ sigchld_handler(int sig)
         if (WIFEXITED(status)) {
             deletejob(job_list, pid);
         } else if (WIFSIGNALED(status)) {
-            deletejob(job_list, pid);
             printf("Job [%d] (%d) terminated by signal %d\n", 
                     pid2jid(pid), pid, WTERMSIG(status));
+            deletejob(job_list, pid);
         } else if (WIFSTOPPED(status)) {
             struct job_t *job = getjobpid(job_list, pid);
             job->state = ST;
@@ -460,6 +460,9 @@ void
 sigint_handler(int sig) 
 {
    /* return */
+    pid_t pid = fgpid(job_list);
+    if (pid)
+        Kill(-pid, sig);
     return;
 }
 
@@ -471,7 +474,10 @@ sigint_handler(int sig)
 void 
 sigtstp_handler(int sig) 
 {
-   return;
+    pid_t pid = fgpid(job_list);
+    if (pid)
+        Kill(-pid, sig);
+    return;
 }
 
 /*********************
@@ -819,6 +825,7 @@ void builtin_bgfg(struct cmdline_tokens *tok) {
     } else { // bg
         kill(-job->pid, SIGCONT);
         job->state = BG;
+        printf("[%d] (%d) %s\n", job->jid, job->pid, job->cmdline);
     }
 
     return ;
@@ -873,5 +880,7 @@ void load_program(struct cmdline_tokens *tok, char *cmdline, int bg) {
     addjob(job_list, pid, bg + 1, cmdline);
     if (!bg) 
         waitfg(pid, &oldset);
+    else 
+        printf("[%d] (%d) %s\n", pid2jid(pid), pid, cmdline);
     Sigprocmask(SIG_SETMASK, &oldset, NULL); 
 }
