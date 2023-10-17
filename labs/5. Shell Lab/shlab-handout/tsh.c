@@ -856,7 +856,11 @@ void waitfg(pid_t pid, sigset_t *oldset) {
 void load_program(struct cmdline_tokens *tok, char *cmdline, int bg) {
     sigset_t fillset;
     sigset_t oldset;
-    Sigfillset(&fillset);
+    Sigemptyset(&fillset);
+    Sigaddset(&fillset, SIGCHLD);
+    Sigaddset(&fillset, SIGINT);
+    Sigaddset(&fillset, SIGTSTP);
+
 
     Sigprocmask(SIG_BLOCK, &fillset, &oldset);
     int pid = Fork();
