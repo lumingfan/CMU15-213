@@ -486,10 +486,10 @@ int main(int argc, char **argv)
 	}
 
 	/* Post result to Autolab */
-	sprintf(autoresult, "%d:%.0f:%.0f:%.0f",
-			numcorrect, (float)perfindex, 
-			avg_mm_throughput/1000.0, avg_mm_util*100);
-	driver_post(NULL, autoresult, autograder, status_msg);
+	// sprintf(autoresult, "%d:%.0f:%.0f:%.0f",
+	// 		numcorrect, (float)perfindex, 
+	// 		avg_mm_throughput/1000.0, avg_mm_util*100);
+	// driver_post(NULL, autoresult, autograder, status_msg);
 
 	exit(0);
 }
