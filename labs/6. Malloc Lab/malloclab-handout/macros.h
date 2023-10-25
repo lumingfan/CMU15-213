@@ -33,14 +33,29 @@
 
 
 
-#ifdef MM_IMPLICIT_C
 #define HDR(p) ((PTR)(p) - WSIZE)
 #define FTR(p) (HDR(p) + BSIZE(HDR(p)) - WSIZE)
-#endif
 
 // find next/prev block pointer given now block pointer
 #define PTRNEXTBLK(p) ((PTR)(p) + BSIZE(HDR(p)))
 #define PTRPREVBLK(p) ((PTR)(p) - BSIZE(HDR(p) - WSIZE))
+
+#ifdef MM_EXPLICIT_C
+
+#define MINBLKSIZE DSIZE * 2 + WSIZE * 2
+#define PTRSIZE sizeof(long)
+#define ADDR unsigned long *
+#define UL unsigned long
+
+// get next/prev free block in the free list
+#define NEXTFREEBLK(p) (ADDR)(*((ADDR)((PTR)(p) + PTRSIZE)))
+#define PREVFREEBLK(p) (ADDR)(*(ADDR)(p))
+
+#define SETNEXTPTR(p, val) (*((ADDR)((PTR)(p) + PTRSIZE)) = (UL)(val))
+#define SETPREVPTR(p, val) (*(ADDR)(p) = (UL)(val))
+
+#define SETPTR(p, val) (*((ADDR)(p)) = (UL)(val)) 
+#endif
 
 #define MAX(a, b) ((a) > (b) ? (a): (b))
 
