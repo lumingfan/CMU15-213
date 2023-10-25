@@ -5,7 +5,7 @@
  * Heap Structure:
  *      | Pro(hdr): 8/1 | Pro(ftr): 8/1 | blocks | Epilogue(hdr): 0/1 | 
  *
- * Allocate: Using first-fit to find the first suitable block (with splitting)
+ * Allocate: Using next-fit to find the first suitable block (with splitting)
  *               
  * Free: Immediately Coalesce 
  *
@@ -22,21 +22,13 @@
 #define MM_IMPLICIT_C
 #include "macros.h"
 
-// #define CHECKHEAP mm_checkheap(0);
-#define CHECKHEAP
+// #define CHECKINIT checkInit();
+#define CHECKINIT 
 
-/**
-#define CHECKPLACE printf("Chech heap after place:\n"); \
-                  CHECKHEAP \
-                  printf("\n\n");
-                  */
+// #define CHECKPLACE checkPlace();
 #define CHECKPLACE 
 
-/**
-#define CHECKFREE printf("Check heap after free\n");\
-                 CHECKHEAP\
-                 printf("\n\n"); 
-                 */
+// #define CHECKFREE checkFree();
 #define CHECKFREE
 
 
@@ -68,8 +60,25 @@ static void *findFreeBlock(size_t size);
 static void *place(void *ptrToblk, size_t newsize);
 static void *coalesce(void *ptrToblk);
 
+static inline void checkInit() {
+    printf("Cheap heap after init:\n"); 
+    mm_checkheap(0); 
+    printf("\n\n");
+}
+static inline void checkPlace() {
+    printf("Check heap after place\n");
+    mm_checkheap(0);\
+    printf("\n\n"); 
+}
+static inline void checkFree() {
+    printf("Check heap after free\n");
+    mm_checkheap(0);\
+    printf("\n\n"); 
+}
+
 // Always point to the footer of prologue 
 PTR proPtr;
+PTR nextFitPtr;
 
 /*
  * mm_init - Called when a new trace starts.
@@ -91,7 +100,10 @@ int mm_init(void)
         // epilogue
         SET(proPtr + WSIZE, PACK(0, 1));        
 
-        CHECKHEAP
+        nextFitPtr = proPtr;    // next fit pointer initially point to
+                                // the footer of prologue
+
+        CHECKINIT
         // | Prologue| Epilogue|, now is no allocated request
         return 0;
     }
@@ -285,6 +297,10 @@ static void *coalesce(void *ptr) {
         tsize += BSIZE(HDR(prev)); 
         SET(HDR(prev), PACK(tsize, 0));
         SET(FTR(ptr), PACK(tsize, 0));
+
+        if (nextFitPtr > (PTR)prev && nextFitPtr <= (PTR)ptr) {
+            nextFitPtr = prev;
+        }
         return prev;
 
     } else if (BALLOC(HDR(prev)) && !BALLOC(HDR(next))) { 
@@ -292,6 +308,11 @@ static void *coalesce(void *ptr) {
         tsize += BSIZE(HDR(next));
         SET(HDR(ptr), PACK(tsize, 0));
         SET(FTR(next), PACK(tsize, 0));
+
+        if (nextFitPtr > (PTR)ptr && nextFitPtr <= (PTR)next) {
+            nextFitPtr = ptr;
+        }
+
         return next;
 
     } else { // coalescing with prev and next block
@@ -299,21 +320,30 @@ static void *coalesce(void *ptr) {
         tsize += BSIZE(HDR(next));
         SET(HDR(prev), PACK(tsize, 0));
         SET(FTR(next), PACK(tsize, 0));
+
+        if (nextFitPtr > (PTR)prev && nextFitPtr <= (PTR)next) {
+            nextFitPtr = prev;
+        }
+ 
         return prev;
 
     }
 
 }
 
-// first fit
+// next fit
 static void *findFreeBlock(size_t size) {
-    PTR ptr = proPtr;
-    PTR epiPtr = mem_sbrk(0); 
-    while (ptr < epiPtr) {
-        if (!BALLOC(HDR(ptr)) && BSIZE(HDR(ptr)) >= size) {
+    PTR ptr = nextFitPtr;
+    PTR epiPtr = mem_sbrk(0);  // point to the block just after epilogue
+    do {
+        if (ptr >= epiPtr) { // traverse over the list, return to the beginning
+            ptr = proPtr;
+        } else if (!BALLOC(HDR(ptr)) && BSIZE(HDR(ptr)) >= size) {
+            nextFitPtr = ptr;
             return ptr;
+        } else {
+            ptr = PTRNEXTBLK(ptr);
         }
-        ptr = PTRNEXTBLK(ptr);
-    }
+    } while (ptr != nextFitPtr);
     return (void *)(-1);
 }
