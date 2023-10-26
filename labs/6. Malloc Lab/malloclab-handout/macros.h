@@ -28,6 +28,12 @@
 #define BSIZE(p) (GET(p) & ~(DSIZE - 1))
 #define BALLOC(p) (GET(p) & 0x1)
 
+// get/set the allocate bit of prev block
+#define PREBALLOC(p) (GET(p) & 0x2)
+#define SETPREVALLOC(p) (*((PTR)(p)) |= 0x2)
+
+#define BINFO(p) (GET(p) & 0x3)
+
 // Pack size and allocated bit
 #define PACK(size, alloc) ((size) | (alloc))
 
