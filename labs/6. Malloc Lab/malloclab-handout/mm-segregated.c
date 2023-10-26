@@ -123,41 +123,40 @@ int mm_init(void)
     proPtr = mem_sbrk(ALIGN(WSIZE + prologueSize + WSIZE)); 
     if ((long)proPtr < 0) { 
         return -1;
-    } 
-    proPtr += WSIZE;     // padding 4 bytes at beginning 
-                            // becaues of the aligment of 8
+    } else {
+        proPtr += WSIZE;     // padding 4 bytes at beginning 
+                             // becaues of the aligment of 8
 
-    // prologue
-    SET(proPtr, PACK(prologueSize, 3)); // header 
+        // prologue
+        SET(proPtr, PACK(prologueSize, 1)); // header: 136/1
 
-    proPtr += WSIZE;
+        proPtr += WSIZE;
 
-    for (int i = 0; i <= MAXIDX; ++i) { // set [0, MAXIDX] free list sentinel
-        for (int j = 0; j <= 1; ++j) { // 0: prev, 1: next
-            SETPTR(proPtr + (2 * i + j) * PTRSIZE, proPtr + 2 * i * PTRSIZE);
+        for (int i = 0; i <= MAXIDX; ++i) { // set [0, MAXIDX] free list sentinel
+            for (int j = 0; j <= 1; ++j) { // 0: prev, 1: next
+                SETPTR(proPtr + (2 * i + j) * PTRSIZE, proPtr + 2 * i * PTRSIZE);
+            }
         }
+        /** 
+         *  Example:
+         *    SETPTR(proPtr, proPtr); // 1st prev
+         *    SETPTR(proPtr + PTRSIZE, proPtr); // 1st next
+         *    SET(proPtr + 2 * PTRSIZE, proPtr + 2 * PTRSIZE); // 2nd prev
+         *    SET(proPtr + 3 * PTRSIZE, proPtr + 2 * PTRSIZE); // 2nd next
+        */
+
+        size_t offset = (2 * (MAXIDX + 1)) * PTRSIZE;
+        SET(proPtr + offset, PACK(prologueSize, 1)); // footer: 136/1
+
+        // epilogue
+        SET(proPtr + offset + WSIZE, PACK(0, 1));// epilogue: always 0/1        
+
+        freeListArray = (ADDR*)proPtr;
+
+        CHECKINIT
+        // | Prologue| Epilogue|, now is no allocated request
+        return 0;
     }
-    /** 
-        *  Example:
-        *    SETPTR(proPtr, proPtr); // 1st prev
-        *    SETPTR(proPtr + PTRSIZE, proPtr); // 1st next
-        *    SET(proPtr + 2 * PTRSIZE, proPtr + 2 * PTRSIZE); // 2nd prev
-        *    SET(proPtr + 3 * PTRSIZE, proPtr + 2 * PTRSIZE); // 2nd next
-    */
-
-    size_t offset = (2 * (MAXIDX + 1)) * PTRSIZE;
-    SET(proPtr + offset, PACK(prologueSize, 3)); // footer 
-
-    // epilogue: always 0/0xX1
-    // X = 0: prev block is free
-    // X = 1: prev block is allocated
-    SET(proPtr + offset + WSIZE, PACK(0, 3)); 
-
-    freeListArray = (ADDR*)proPtr;
-
-    CHECKINIT
-    // | Prologue| Epilogue|, now is no allocated request
-    return 0;
 }
 
 /*
@@ -175,12 +174,10 @@ void *malloc(size_t size)
 
     
     size_t newsize;
-    // payload can be hold in MINBLKSIZE
-    // pointer filed and footer filed can be used in allocated blocks
-    if (size <= MINBLKSIZE - WSIZE) 
+    if (size <= MINBLKSIZE - DSIZE)  // payload can be hold in MINBLKSIZE
         newsize = MINBLKSIZE; 
     else 
-        newsize = ALIGN(size + WSIZE); // payload + header + footer
+        newsize = ALIGN(size + DSIZE); // payload + header + footer
     
     PTR ptrToblk;
     if ((ptrToblk = findFreeBlock(newsize)) != (PTR)((void *)-1)) { // find
@@ -194,16 +191,8 @@ void *malloc(size_t size)
             return NULL;
         }
             
-        // using epilogue prev alloc bit to mask new header and footer
-        unsigned int mask;
-        if (PREBALLOC(HDR(newChunk))) {
-            mask = 2;
-        } else {
-            mask = 0;
-        }
-
-        SET(HDR(newChunk), PACK(allocSize, mask)); // header
-        SET(FTR(newChunk), PACK(allocSize, mask)); // footer
+        SET(HDR(newChunk), PACK(allocSize, 0)); // header
+        SET(FTR(newChunk), PACK(allocSize, 0)); // footer
         SET(FTR(newChunk) + WSIZE, PACK(0, 1)); // new epilogue
 
         newChunk = coalesce(newChunk); 
@@ -222,10 +211,10 @@ void free(void *ptr) {
     if (ptr == NULL) {
         return ;
     }
+
     
     DEALLOCATE(HDR(ptr));
     DEALLOCATE(FTR(ptr));
-    SETPREVALLOC(HDR(PTRNEXTBLK(ptr)));
     void *newptr = coalesce(ptr); 
     newptr = newptr; // make gcc quiet
     CHECKFREE(ptr);
@@ -316,13 +305,12 @@ void mm_checkheap(int verbose){
 
     void *ptr = proPtr;
     while (ptr < ptrEnd) {
-        printf("block at %p, header at %p: %d\\%d", 
-                ptr, HDR(ptr), BSIZE(HDR(ptr)), BINFO(HDR(ptr)));
+        printf("block at %p, header at %p: %d\\%d, footer at %p: %d\\%d, ", 
+                ptr, HDR(ptr), BSIZE(HDR(ptr)), BALLOC(HDR(ptr)), 
+                     FTR(ptr), BSIZE(FTR(ptr)), BALLOC(FTR(ptr)));
 
         // free block or initially sentinel, print the prev/next pointer
         if (!BALLOC(HDR(ptr))) { 
-            printf(", footer at %p: %d\\%d, ", 
-                FTR(ptr), BSIZE(FTR(ptr)), BINFO(FTR(ptr)));
             printf("prev: %p, next: %p", PREVFREEBLK(ptr), NEXTFREEBLK(ptr));
         
             if (NEXTFREEBLK(PREVFREEBLK(ptr)) != ptr) {
@@ -359,12 +347,9 @@ static void *place(void *ptrToblk, size_t newsize) {
     // reminder part is equal or smaller than minimum size of a block
     if (blockSize - newsize <= MINBLKSIZE) {  
         // don't split, directly return this pointer
-        // set allocated
         ALLOCATE(HDR(ptrToblk)); 
         ALLOCATE(FTR(ptrToblk));
-        
-        // set the prev allocated bit of next block
-        SETPREVALLOC(HDR(PTRNEXTBLK(ptrToblk)));
+
 
         CHECKPLACE(ptrToblk, newsize);
         return ptrToblk;
@@ -373,8 +358,8 @@ static void *place(void *ptrToblk, size_t newsize) {
     // split
 
     // allocated block
-    SET(HDR(ptrToblk), PACK(newsize, PREBALLOC(HDR(ptrToblk)) | 1)); // header
-    SET(FTR(ptrToblk), PACK(newsize, PREBALLOC(HDR(ptrToblk)) | 1)); // footer
+    SET(HDR(ptrToblk), PACK(newsize, 1)); // header
+    SET(FTR(ptrToblk), PACK(newsize, 1)); // footer
 
     size_t rSize = blockSize - newsize; // size of reminder part
     PTR ptrToRmd = PTRNEXTBLK(ptrToblk); // pointer to the reminder block
@@ -382,7 +367,6 @@ static void *place(void *ptrToblk, size_t newsize) {
     // reminder free block
     SET(HDR(ptrToRmd), PACK(rSize, 0)); // header
     SET(FTR(ptrToRmd), PACK(rSize, 0)); // footer
-    SETPREVALLOC(HDR(ptrToRmd));
 
     // add this new splitted block to free list
     insertBLK(getListHdr(freeListArray, getIdx(rSize)), ptrToRmd); 
@@ -394,34 +378,31 @@ static void *place(void *ptrToblk, size_t newsize) {
 
 static void *coalesce(void *ptr) {
     void *next = PTRNEXTBLK(ptr);
-    void *prev = NULL;
-    if (!PREBALLOC(HDR(ptr))) {
-        prev = PTRPREVBLK(ptr);
-    }
-
+    void *prev = PTRPREVBLK(ptr);
+    
     size_t tsize = BSIZE(HDR(ptr)); // record the total size of free block 
     
-    if (!prev && BALLOC(HDR(next))) { // no coalescing
+    if (BALLOC(HDR(prev)) && BALLOC(HDR(next))) { // no coalescing
         insertBLK(getListHdr(freeListArray, getIdx(tsize)), ptr);
         return ptr;
-    } else if (prev && BALLOC(HDR(next))) { 
+    } else if (!BALLOC((HDR(prev))) && BALLOC(HDR(next))) { 
         // coalescing with prev block
         tsize += BSIZE(HDR(prev)); 
 
-        SET(HDR(prev), PACK(tsize, PREBALLOC(HDR(prev))));
-        SET(FTR(ptr), PACK(tsize, PREBALLOC(HDR(prev))));
+        SET(HDR(prev), PACK(tsize, 0));
+        SET(FTR(ptr), PACK(tsize, 0));
 
         deleteBLK(prev);
         insertBLK(getListHdr(freeListArray, getIdx(tsize)), prev);
 
         return prev;
 
-    } else if (!prev && !BALLOC(HDR(next))) { 
+    } else if (BALLOC(HDR(prev)) && !BALLOC(HDR(next))) { 
         // coalescing with next block
         tsize += BSIZE(HDR(next));
 
-        SET(HDR(ptr), PACK(tsize, PREBALLOC(HDR(ptr))));
-        SET(FTR(next), PACK(tsize, PREBALLOC(HDR(ptr))));
+        SET(HDR(ptr), PACK(tsize, 0));
+        SET(FTR(next), PACK(tsize, 0));
 
         deleteBLK(next);
         insertBLK(getListHdr(freeListArray, getIdx(tsize)), ptr);
@@ -432,8 +413,8 @@ static void *coalesce(void *ptr) {
         tsize += BSIZE(HDR(prev));
         tsize += BSIZE(HDR(next));
 
-        SET(HDR(prev), PACK(tsize, PREBALLOC(HDR(prev))));
-        SET(FTR(next), PACK(tsize, PREBALLOC(HDR(prev))));
+        SET(HDR(prev), PACK(tsize, 0));
+        SET(FTR(next), PACK(tsize, 0));
 
         deleteBLK(prev);
         deleteBLK(next);
