@@ -40,8 +40,10 @@
 #define PTRNEXTBLK(p) ((PTR)(p) + BSIZE(HDR(p)))
 #define PTRPREVBLK(p) ((PTR)(p) - BSIZE(HDR(p) - WSIZE))
 
-#ifdef MM_EXPLICIT_C
 
+// pre-defined macros for explicit list 
+// (segregated list also use explicit list for each buckets)
+#if defined(MM_EXPLICIT_C) || defined(MM_SEGREGATED_C)
 #define MINBLKSIZE DSIZE * 2 + WSIZE * 2
 #define PTRSIZE sizeof(long)
 #define ADDR unsigned long *
@@ -56,6 +58,15 @@
 
 #define SETPTR(p, val) (*((ADDR)(p)) = (UL)(val)) 
 #endif
+
+
+#ifdef MM_SEGREGATED_C
+// total 16 entry for free list array
+#define MAXIDX 16
+
+#endif
+
+
 
 #define MAX(a, b) ((a) > (b) ? (a): (b))
 
