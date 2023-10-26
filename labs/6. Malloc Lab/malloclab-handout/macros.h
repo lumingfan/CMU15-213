@@ -7,7 +7,7 @@
 
 #define WSIZE 4     // single word size
 #define DSIZE 8     // double word size         
-#define CHUNKSIZE 1 << 12    // Extend heap by this amount 
+#define CHUNKSIZE 1 << 9    // Extend heap by this amount 
 
 #define PTR unsigned char *  // pointer to unsigned char, make sure
                             // the pointer arithmetic is same as math arithmetic
@@ -62,7 +62,7 @@
 
 #ifdef MM_SEGREGATED_C
 // total 16 entry for free list array
-#define MAXIDX 16
+#define MAXIDX 15
 
 #endif
 
