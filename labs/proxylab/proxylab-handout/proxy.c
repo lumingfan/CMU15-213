@@ -12,6 +12,7 @@
 #define MAX_REQUEST_LEN 4096
 #define THREAD_NUM 4
 #define FDBUF_SIZE 16
+#define MAX_TRANSMIT_SIZE (1 << 31)
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -26,23 +27,58 @@ struct sbuf_t {
     sem_t remain;
     sem_t available;
 };
-
 typedef struct sbuf_t sbuf_t;
-
 static void init_sbuf(sbuf_t *buf);
 static void insert_sbuf(sbuf_t *buf, int fd);
 static int remove_sbuf(sbuf_t *buf);
 
-static void process_client(int clientfd);
+
+struct cache_node_t {
+    struct cache_node_t *next;
+    struct cache_node_t *prev;
+    char *content;  
+    char tag[MAX_LINE_LEN];
+    int size;
+};
+
+typedef struct cache_node_t cache_node_t;
+static void create_node(cache_node_t *node, 
+                        const char *content, 
+                        const char *tag);
+static void delete_node(cache_node_t *node);
+
+struct cache_t {
+    cache_node_t *sentinel;  
+    int total_size;
+};
+typedef struct cache_t cache_t;
+static void init_cache(cache_t *cache);
+static void insert_cache(cache_t *cache, const char *content, const char *tag);
+static void insert_node(cache_t *cache, cache_node_t *node);
+static void remove_cache(cache_t *cache);  // remove the LRU item from cache
+static void remove_node(cache_node_t *node);
+static void free_cache(cache_t *cache);
+
+// used for thread argument passing
+typedef struct {
+    sbuf_t *sbuf;
+    cache_t *cache;
+} sbufcache_t;
+
+// using LRU 
+static void replace_cache(cache_t *cache, const char *content, const char *tag);
+static char *find_cache(cache_t *cache, const char *tag);
+
+
+static void process_client(int clientfd, cache_t *cache);
 static int process_http_header(rio_t *rp, char **pte, 
                         char *method, char *hostName, char *port,
                         char *path, char *version);
 static int process_request_header(rio_t *rp, char **pte, const char *hostName);
 static int process_url(const char *url, char *hostName, char *port, char *path);
 
-static ssize_t forwarding(char *message, size_t requestLen, 
-                   char *hostName, char *port, 
-                   char *object, int max_object_size); 
+static void forwarding(char *message, size_t requestLen, char *hostName, 
+                        char *port, char *path, int clientfd, cache_t *cache); 
 
 static void *thread_func(void *arg);
 
@@ -57,12 +93,17 @@ int main(int argc, char *argv[]) {
     int listenfd = Open_listenfd(argv[1]);
 
     sbuf_t buf;
+    cache_t cache;
     init_sbuf(&buf);
+    init_cache(&cache);
+    sbufcache_t arg;
+    arg.sbuf = &buf;
+    arg.cache = &cache;
 
     pthread_t threadspool[THREAD_NUM];
 
     for (int i = 0; i < THREAD_NUM; ++i) {
-        Pthread_create(&threadspool[i], NULL, thread_func, &buf);
+        Pthread_create(&threadspool[i], NULL, thread_func, &arg);
     }
 
 
@@ -83,9 +124,11 @@ int main(int argc, char *argv[]) {
         // insert new connected file descriptor to fd buffer
         insert_sbuf(&buf, connectfd);
     }
+
+    free_cache(&cache);
 }
 
-void process_client(int clientfd) {
+void process_client(int clientfd, cache_t *cache) {
     // initial rio buffer
     rio_t rio; 
     Rio_readinitb(&rio, clientfd);
@@ -103,7 +146,8 @@ void process_client(int clientfd) {
     if (!process_http_header(&rio, &request_pointer, 
                         method, hostName, port, path, http_version)) {
         // not GET method
-        fprintf(stderr, "Doesn't support method: %s\n", method);
+        fprintf(stderr, "URL format error or" 
+            " Doesn't support method: %s\n", method);
         return ;
     }
     // add blank line: \r\n
@@ -120,22 +164,36 @@ void process_client(int clientfd) {
     // forward client request to origin server and get returned object
     // if size of returned object is bigger than MAX_OBJECT_SIZE, then 
     // truncate it
-    char object[MAX_OBJECT_SIZE];
     size_t requestLen = request_pointer - &proxyRequest[0];
-    ssize_t responseLen = forwarding(proxyRequest, requestLen, 
-                        hostName, port, object, MAX_OBJECT_SIZE); 
-
-    // write response to connectfd
-    Rio_writen(clientfd, object, responseLen);
+    forwarding(proxyRequest, requestLen, 
+            hostName, port, path, clientfd, cache); 
 }
 
 
-ssize_t forwarding(char *message, size_t requestLen, 
-                   char *hostName, char *port, 
-                    char *object, int max_object_size) {
+void forwarding(char *message, size_t requestLen, char *hostName, 
+                char *port, char *path, int clientfd, cache_t *cache) {
 
+    char tag[MAX_LINE_LEN];
+    strcat(tag, hostName);
+    strcat(tag, ":");
+    strcat(tag, port);
+    strcat(tag, path);
+    char *content;
+    printf("%s\n", tag);
+    
+    // find content in cache
+    if ((content = find_cache(cache, tag)) != NULL) {
+        Rio_writen(clientfd, content, strlen(content));
+        return ;
+    }
+ 
     // connect to default http port
-    int connectfd = Open_clientfd(hostName, port);    
+    int connectfd = open_clientfd(hostName, port);    
+    // connect error
+    if (connectfd < 0) {
+        fprintf(stderr, "Open_clientfd error\n");
+        return ;
+    }
 
     rio_t rio;
     Rio_readinitb(&rio, connectfd);
@@ -144,9 +202,33 @@ ssize_t forwarding(char *message, size_t requestLen,
     Rio_writen(connectfd, message, requestLen); 
 
     // get response
-    ssize_t len = Rio_readnb(&rio, object, max_object_size);
+    int cnt;
+    int total_bytes = 0;
+    char usrbuf[MAX_OBJECT_SIZE];
+    char cachebuf[MAX_OBJECT_SIZE];
+    int flag = 0;
+
+    while ((cnt = Rio_readnb(&rio, usrbuf, MAX_OBJECT_SIZE))) {
+        total_bytes += cnt;
+        if (total_bytes > MAX_OBJECT_SIZE) {
+            flag = 1;
+        } else {
+            strncat(cachebuf, usrbuf, cnt);
+        }
+        Rio_writen(clientfd, usrbuf, cnt);
+    }
+
+   
+    if (!flag ) {
+        if (cache->total_size + total_bytes < MAX_CACHE_SIZE) {
+            // insert
+            insert_cache(cache, cachebuf, tag);
+        } else {
+            // replace
+            replace_cache(cache, cachebuf, tag);
+        }
+    }
     close(connectfd);
-    return len;
 }
 
 int process_http_header(rio_t *rp, char **pte, 
@@ -327,10 +409,94 @@ int remove_sbuf(sbuf_t *buf) {
 
 void *thread_func(void *arg) {
     Pthread_detach(Pthread_self());
+    sbufcache_t t = *(sbufcache_t*)arg;
     while (1) {
-        int connectfd = remove_sbuf((sbuf_t*)arg);
-        process_client(connectfd);
+        int connectfd = remove_sbuf(t.sbuf);
+        process_client(connectfd, t.cache);
         Close(connectfd);
     }
     return NULL;
 }
+
+void create_node(cache_node_t *node, 
+                 const char *content, 
+                 const char *tag) {
+    node->size = strlen(content);
+    node->content = (char*)malloc(node->size + 1);
+    strcpy(node->content, content);
+    strcpy(node->tag, tag);
+    node->next = NULL;
+    node->prev = NULL;
+}
+
+void delete_node(cache_node_t *node) {
+    free(node->content);
+}
+
+void init_cache(cache_t *cache) {
+    cache->sentinel = (cache_node_t*) malloc(sizeof(cache_node_t)); 
+    cache->sentinel->next = cache->sentinel; 
+    cache->sentinel->prev = cache->sentinel;
+    cache->total_size = 0;
+}
+
+void insert_cache(cache_t *cache, const char *content, const char *tag) {
+    cache_node_t *node = (cache_node_t*) malloc(sizeof(cache_node_t));
+    create_node(node, content, tag);
+    insert_node(cache, node);
+    cache->total_size += node->size;
+}
+
+void insert_node(cache_t *cache, cache_node_t *node) {
+    node->next = cache->sentinel->next;
+    node->prev = cache->sentinel;
+    cache->sentinel->next->prev = node;
+    cache->sentinel->next = node;
+}
+
+
+void remove_cache(cache_t *cache) {
+    cache_node_t *node = cache->sentinel->prev; 
+    remove_node(node);
+    cache->total_size -= node->size;
+    delete_node(node);
+    free(node);
+}
+
+void remove_node(cache_node_t *node) {
+    node->prev->next = node->next;
+    node->next->prev = node->prev;
+}
+
+void free_cache(cache_t *cache) {
+    while (cache->total_size != 0) {
+        remove_cache(cache);
+    }
+    free(cache->sentinel);
+}
+
+void replace_cache(cache_t *cache, const char *content, const char *tag) {
+    remove_cache(cache);
+    insert_cache(cache, content, tag);
+}
+
+char *find_cache(cache_t *cache, const char *tag) {
+    cache_node_t *node = cache->sentinel->next;
+    while (node != cache->sentinel) {
+        if (!strcmp(node->tag, tag)) {
+            // move this node to the head of list
+            remove_node(node);
+            insert_node(cache, node);
+            return node->content;
+        } 
+        node = node->next;
+    }
+    return NULL;
+}
+
+
+
+
+
+
+
