@@ -10,20 +10,41 @@
 #define MAX_BACKLOG 1024
 #define MAX_LINE_LEN 64
 #define MAX_REQUEST_LEN 4096
+#define THREAD_NUM 4
+#define FDBUF_SIZE 16
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
-void process_client(int clientfd);
-int process_http_header(rio_t *rp, char **pte, 
+
+struct sbuf_t {
+    int fdbuf[FDBUF_SIZE];
+    int head;
+    int tail;
+
+    sem_t lock;
+    sem_t remain;
+    sem_t available;
+};
+
+typedef struct sbuf_t sbuf_t;
+
+static void init_sbuf(sbuf_t *buf);
+static void insert_sbuf(sbuf_t *buf, int fd);
+static int remove_sbuf(sbuf_t *buf);
+
+static void process_client(int clientfd);
+static int process_http_header(rio_t *rp, char **pte, 
                         char *method, char *hostName, char *port,
                         char *path, char *version);
-int process_request_header(rio_t *rp, char **pte, const char *hostName);
-int process_url(const char *url, char *hostName, char *port, char *path);
+static int process_request_header(rio_t *rp, char **pte, const char *hostName);
+static int process_url(const char *url, char *hostName, char *port, char *path);
 
-ssize_t forwarding(char *message, size_t requestLen, 
+static ssize_t forwarding(char *message, size_t requestLen, 
                    char *hostName, char *port, 
                    char *object, int max_object_size); 
+
+static void *thread_func(void *arg);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -34,6 +55,16 @@ int main(int argc, char *argv[]) {
 
     // get listen fd of server
     int listenfd = Open_listenfd(argv[1]);
+
+    sbuf_t buf;
+    init_sbuf(&buf);
+
+    pthread_t threadspool[THREAD_NUM];
+
+    for (int i = 0; i < THREAD_NUM; ++i) {
+        Pthread_create(&threadspool[i], NULL, thread_func, &buf);
+    }
+
 
     while (1) {
         struct sockaddr client;
@@ -49,10 +80,8 @@ int main(int argc, char *argv[]) {
                     serv, MAX_LINE_LEN, 0);
         printf("connect to %s: %s\n", host, serv);
 
-        // process requests of client
-        process_client(connectfd);  
-        // free fd
-        Close(connectfd);
+        // insert new connected file descriptor to fd buffer
+        insert_sbuf(&buf, connectfd);
     }
 }
 
@@ -263,3 +292,45 @@ int process_url(const char *url, char *hostName, char *port, char *path) {
 }
 
 
+void init_sbuf(sbuf_t *buf) {
+    buf->head = 0;
+    buf->tail = 0;
+
+    Sem_init(&buf->lock, 0, 1);
+    Sem_init(&buf->remain, 0, 0);
+    Sem_init(&buf->available, 0, FDBUF_SIZE);
+}
+
+void insert_sbuf(sbuf_t *buf, int fd) {
+    P(&buf->available);
+
+    P(&buf->lock);
+    buf->fdbuf[buf->tail] = fd;
+    buf->tail = (buf->tail + 1) % FDBUF_SIZE;
+    V(&buf->lock);
+
+    V(&buf->remain);
+}
+
+int remove_sbuf(sbuf_t *buf) {
+    int retv;
+    P(&buf->remain);
+     
+    P(&buf->lock);
+    retv = buf->fdbuf[buf->head];
+    buf->head = (buf->head + 1) % FDBUF_SIZE;
+    V(&buf->lock);
+
+    V(&buf->available);
+    return retv;
+}
+
+void *thread_func(void *arg) {
+    Pthread_detach(Pthread_self());
+    while (1) {
+        int connectfd = remove_sbuf((sbuf_t*)arg);
+        process_client(connectfd);
+        Close(connectfd);
+    }
+    return NULL;
+}
