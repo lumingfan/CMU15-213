@@ -50,7 +50,16 @@ static void delete_node(cache_node_t *node);
 struct cache_t {
     cache_node_t *sentinel;  
     int total_size;
+
+    // used for reader-writer model, writer preference
+    int rcnt;
+    int wcnt;
+    sem_t rlock;
+    sem_t rcntlock;
+    sem_t wlock;
+    sem_t wcntlock;
 };
+
 typedef struct cache_t cache_t;
 static void init_cache(cache_t *cache);
 static void insert_cache(cache_t *cache, const char *content, const char *tag);
@@ -58,6 +67,16 @@ static void insert_node(cache_t *cache, cache_node_t *node);
 static void remove_cache(cache_t *cache);  // remove the LRU item from cache
 static void remove_node(cache_node_t *node);
 static void free_cache(cache_t *cache);
+
+// writer model
+static void writer_prelogue(cache_t *cache);
+static void writer_epilogue(cache_t *cache);
+
+// reader model
+static void reader_prelogue(cache_t *cache);
+static void reader_epilogue(cache_t *cache);
+
+
 
 // used for thread argument passing
 typedef struct {
@@ -438,13 +457,25 @@ void init_cache(cache_t *cache) {
     cache->sentinel->next = cache->sentinel; 
     cache->sentinel->prev = cache->sentinel;
     cache->total_size = 0;
+    cache->rcnt = 0;
+    cache->wcnt = 0;
+    Sem_init(&cache->rlock, 0, 1);
+    Sem_init(&cache->rcntlock, 0, 1);
+    Sem_init(&cache->wlock, 0, 1);
+    Sem_init(&cache->wcntlock, 0, 1);
 }
 
+
+// writer
 void insert_cache(cache_t *cache, const char *content, const char *tag) {
+    writer_prelogue(cache);
+
     cache_node_t *node = (cache_node_t*) malloc(sizeof(cache_node_t));
     create_node(node, content, tag);
     insert_node(cache, node);
     cache->total_size += node->size;
+
+    writer_epilogue(cache);
 }
 
 void insert_node(cache_t *cache, cache_node_t *node) {
@@ -455,12 +486,17 @@ void insert_node(cache_t *cache, cache_node_t *node) {
 }
 
 
+// writer
 void remove_cache(cache_t *cache) {
+    writer_prelogue(cache);
+
     cache_node_t *node = cache->sentinel->prev; 
     remove_node(node);
     cache->total_size -= node->size;
     delete_node(node);
     free(node);
+
+    writer_epilogue(cache);
 }
 
 void remove_node(cache_node_t *node) {
@@ -475,28 +511,81 @@ void free_cache(cache_t *cache) {
     free(cache->sentinel);
 }
 
+// writer 
 void replace_cache(cache_t *cache, const char *content, const char *tag) {
+    writer_prelogue(cache);
+
     remove_cache(cache);
     insert_cache(cache, content, tag);
+
+    writer_epilogue(cache);
 }
 
+// reader
 char *find_cache(cache_t *cache, const char *tag) {
+    reader_prelogue(cache);
+
     cache_node_t *node = cache->sentinel->next;
     while (node != cache->sentinel) {
         if (!strcmp(node->tag, tag)) {
             // move this node to the head of list
             remove_node(node);
             insert_node(cache, node);
+
+            // release lock
+            reader_epilogue(cache);
             return node->content;
         } 
         node = node->next;
     }
+
+    // release lock
+    reader_epilogue(cache);
     return NULL;
 }
 
 
 
+void writer_prelogue(cache_t *cache) {
+    P(&cache->wcntlock); // get lock for wcnt
+    if (cache->wcnt == 0) { // first writer
+        P(&cache->rlock); // block later reader
+    }
+    cache->wcnt++;
+    V(&cache->wcntlock); // release wcntlock for next writer enter
 
+    P(&cache->wlock); // single writer can write 
+}
 
+void writer_epilogue(cache_t *cache) {
+    V(&cache->wlock); // writer done
 
+    P(&cache->wcntlock);
+    cache->wcnt--;
+    if (cache->wcnt == 0) { // last writer, release lock for reader
+        V(&cache->rlock);
+    }
+    V(&cache->wcntlock);
+}
 
+void reader_prelogue(cache_t *cache) {
+    P(&cache->rlock); // first get rlock, if there exist one or more 
+                     // writer, blocked
+
+    P(&cache->rcntlock);
+    if (cache->rcnt == 0) {  // first reader, block writing
+        P(&cache->wlock); 
+    }
+    cache->rcnt++;
+    V(&cache->rcntlock);
+    V(&cache->rlock); // release rlock for reading
+}
+
+void reader_epilogue(cache_t *cache) {
+    P(&cache->rcntlock);
+    cache->rcnt--;
+    if (cache->rcnt == 0) { // last reader, release wlock for writing 
+        V(&cache->wlock);
+    }
+    V(&cache->rcntlock);
+}
