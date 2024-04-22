@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/epoll.h>
 
 #include "csapp.h"
 
@@ -13,6 +14,9 @@
 #define THREAD_NUM 4
 #define FDBUF_SIZE 16
 #define MAX_TRANSMIT_SIZE (1 << 31)
+
+/** maximum events number of epoll */
+#define MAX_EVENTS 10000
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -76,6 +80,14 @@ static void writer_epilogue(cache_t *cache);
 static void reader_prelogue(cache_t *cache);
 static void reader_epilogue(cache_t *cache);
 
+// epoll wrapper functions
+static int Epoll_create1(int flags);
+
+static int Epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout);
+            
+static int Epoll_ctl(int epfd, int op, int fd,
+                     struct epoll_event *event);
 
 
 // used for thread argument passing
@@ -125,23 +137,38 @@ int main(int argc, char *argv[]) {
         Pthread_create(&threadspool[i], NULL, thread_func, &arg);
     }
 
+    struct epoll_event ev, events[MAX_EVENTS];
+    int epollfd = Epoll_create1(0);
+    ev.events = EPOLLIN;
+    ev.data.fd = listenfd;
+    Epoll_ctl(epollfd, EPOLL_CTL_ADD, listenfd, &ev);
 
     while (1) {
-        struct sockaddr client;
-        socklen_t clientLen = sizeof(client); 
+        int nfds = Epoll_wait(epollfd, events, MAX_EVENTS, -1);
+        for (int n = 0; n < nfds; ++n) {
+            if (events[n].data.fd == listenfd) {
+                struct sockaddr client;
+                socklen_t clientLen = sizeof(client); 
 
-        // connect with client
-        int connectfd = Accept(listenfd, &client, &clientLen);
+                // connect with client
+                int connectfd = Accept(listenfd, &client, &clientLen);
 
-        // print client information
-        char host[MAX_LINE_LEN], serv[MAX_LINE_LEN];
-        Getnameinfo(&client, clientLen, 
-                    host, MAX_LINE_LEN, 
-                    serv, MAX_LINE_LEN, 0);
-        printf("connect to %s: %s\n", host, serv);
+                // print client information
+                char host[MAX_LINE_LEN], serv[MAX_LINE_LEN];
+                Getnameinfo(&client, clientLen, 
+                            host, MAX_LINE_LEN, 
+                            serv, MAX_LINE_LEN, 0);
+                printf("connect to %s: %s\n", host, serv);
 
-        // insert new connected file descriptor to fd buffer
-        insert_sbuf(&buf, connectfd);
+                fcntl(connectfd, F_SETFL, O_NONBLOCK);
+                ev.events = EPOLLIN | EPOLLET;
+                ev.data.fd = connectfd;
+                Epoll_ctl(epollfd, EPOLL_CTL_ADD, connectfd, &ev);
+            } else {
+                // insert connected file descriptor to fd buffer
+                insert_sbuf(&buf, events[n].data.fd);
+            }
+        }
     }
 
     free_cache(&cache);
@@ -588,4 +615,33 @@ void reader_epilogue(cache_t *cache) {
         V(&cache->wlock);
     }
     V(&cache->rcntlock);
+}
+
+
+int Epoll_create1(int flags) {
+    int epollfd = epoll_create1(flags);
+    if (epollfd == -1) {
+        perror("epoll_create1");
+        exit(EXIT_FAILURE);
+    }
+    return epollfd;
+}
+
+int Epoll_wait(int epfd, struct epoll_event *events,
+                      int maxevents, int timeout) {
+    int nfds = epoll_wait(epfd, events, maxevents, timeout);
+    if (nfds == -1) {
+        perror("epoll_wait");
+        exit(EXIT_FAILURE);
+    }
+    return nfds;
+}
+            
+int Epoll_ctl(int epfd, int op, int fd,
+                     struct epoll_event *event) {
+    if (epoll_ctl(epfd, op, fd, event) == -1) {
+        perror("epoll_ctl");
+        exit(EXIT_FAILURE);
+    }
+    return 0;
 }
